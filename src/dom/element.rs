@@ -1,10 +1,12 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use crate::dom::Node;
+
 #[derive(Debug, Clone, Default)]
 pub struct Element {
     pub tag_name: String,
     attributes: HashMap<String, String>,
-    children: Vec<Rc<RefCell<Element>>>,
+    children: Vec<Rc<RefCell<Node>>>,
 }
 
 impl Element {
@@ -15,7 +17,7 @@ impl Element {
         }
     }
 
-    pub fn append_child(&mut self, child: Element) {
+    pub fn append_child(&mut self, child: Node) {
         self.children.push(Rc::new(RefCell::new(child)));
     }
 
@@ -35,11 +37,11 @@ impl Element {
         self.attributes.iter_mut()
     }
 
-    pub fn children(&self) -> impl IntoIterator<Item = &Rc<RefCell<Element>>> {
+    pub fn children(&self) -> impl IntoIterator<Item = &Rc<RefCell<Node>>> {
         self.children.iter()
     }
 
-    pub fn children_mut(&mut self) -> impl IntoIterator<Item = &mut Rc<RefCell<Element>>> {
+    pub fn children_mut(&mut self) -> impl IntoIterator<Item = &mut Rc<RefCell<Node>>> {
         self.children.iter_mut()
     }
 
