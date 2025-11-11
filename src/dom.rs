@@ -6,7 +6,7 @@ pub use node::Node;
 
 #[derive(Debug, Clone)]
 pub struct Document {
-    root: Node,
+    pub root: Node,
 }
 
 impl Document {
