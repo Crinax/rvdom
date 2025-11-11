@@ -1,8 +1,11 @@
 mod element;
 mod node;
+mod observer;
 
 pub use element::Element;
 pub use node::Node;
+
+pub use observer::{DomEvent, DomEventType};
 
 #[derive(Debug, Clone)]
 pub struct Document {
