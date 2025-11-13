@@ -1,17 +1,14 @@
 mod dom;
 
-use crate::dom::Document;
+use dom::{h, text};
 
 fn main() {
-    let dom = Document::new(Document::create_element(
+    let dom = h(
         "div",
-        vec![],
-        vec![Document::create_element(
-            "p",
-            vec![("class", "text")],
-            vec![Document::create_text("Hello, world!")],
-        )],
-    ));
+        None,
+        &[("style", "color: red;")],
+        vec![h("p", None, &[], vec![text("Hello")])],
+    );
 
     println!("{:#?}", dom);
 }
