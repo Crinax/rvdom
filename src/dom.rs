@@ -1,38 +1,36 @@
-mod element;
 mod node;
 
-pub use element::Element;
-pub use node::Node;
+pub use node::VNode;
 
 #[derive(Debug, Clone)]
 pub struct Document {
-    pub root: Node,
+    pub root: VNode,
 }
 
 impl Document {
-    pub fn new(root: Node) -> Self {
+    pub fn new(root: VNode) -> Self {
         Document { root }
     }
 
     pub fn create_element(
         tag_name: &str,
         attributes: Vec<(&str, &str)>,
-        children: Vec<Node>,
-    ) -> Node {
-        let mut element = Element::new(tag_name);
+        children: Vec<VNode>,
+    ) -> VNode {
+        let mut element = VNode::element(tag_name, None);
 
         for (key, value) in attributes {
-            element.set_attribute(key, value);
+            element.set_property(key, value);
         }
 
         for child in children {
             element.append_child(child);
         }
 
-        Node::Element(element)
+        element
     }
 
-    pub fn create_text(text: &str) -> Node {
-        Node::Text(text.to_string())
+    pub fn create_text(text: &str) -> VNode {
+        VNode::text(text, None)
     }
 }
