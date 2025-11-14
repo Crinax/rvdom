@@ -1,4 +1,4 @@
-use crate::dom::VNode;
+use crate::dom::{Element, VNode};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AttributePatch {
@@ -24,56 +24,88 @@ pub enum Patch {
     },
 }
 
-pub fn patch(old: VNode, new: VNode) -> Patch {
+fn are_text_nodes_same(old: &[VNode], new: &[VNode]) -> bool {
+    let mut old_text_nodes_iter = old.iter().filter(|child| child.is_text());
+    let mut new_text_nodes_iter = new.iter().filter(|child| child.is_text());
+
+    let has_same_size = old_text_nodes_iter.clone().count() == new_text_nodes_iter.clone().count();
+
+    let all_old_text_nodes_are_in_new = old_text_nodes_iter.all(|child| new.contains(child));
+    let all_new_text_nodes_are_in_old = new_text_nodes_iter.all(|child| old.contains(child));
+
+    has_same_size && all_old_text_nodes_are_in_new && all_new_text_nodes_are_in_old
+}
+
+pub fn patch(old: &VNode, new: &VNode) -> Patch {
     if old == new {
         return Patch::None;
     }
 
     match (old, new) {
-        (VNode::Text(_), node) => Patch::Replace(node),
-        (_, VNode::Text(text)) => Patch::Replace(VNode::Text(text)),
+        (VNode::Text(_), node) => Patch::Replace(node.to_owned()),
+        (_, VNode::Text(text)) => Patch::Replace(VNode::Text(text.to_owned())),
 
-        (VNode::Element { tag_name: old_tag_name, key: _, props: old_props, children: old_children }, VNode::Element { tag_name: new_tag_name, key: _, props: new_props, children: new_children }) => {
-            if old_tag_name != new_tag_name {
-                return Patch::Replace(new);
-            }
+        (old_element, new_element) => {
+            let old_element = old_element.element();
+            let new_element = new_element.element();
 
             let mut props = Vec::new();
             let mut children = Vec::new();
 
-            for (k, v) in new_props {
-                if old_props.contains_key(&k) {
-                    if old_props[&k] != v {
-                        props.push(AttributePatch::Update(k, v));
+            if !are_text_nodes_same(&old_element.children, &new_element.children) {
+                return Patch::Replace(VNode::Element(new_element.to_owned()));
+            }
+
+            for name in old_element.props.keys() {
+                if !new_element.props.contains_key(name) {
+                    props.push(AttributePatch::Remove(name.to_owned()));
+                }
+            }
+
+            for (name, value) in new_element.props.to_owned().into_iter() {
+                match old_element.props.get(&name) {
+                    Some(old_value) => {
+                        if *old_value != value {
+                            props.push(AttributePatch::Update(name, value));
+                        }
                     }
-                } else {
-                    props.push(AttributePatch::Insert(k, v));
+                    None => props.push(AttributePatch::Insert(name, value)),
                 }
             }
 
-            for k in old_props.keys() {
-                if !new_props.contains_key(k) {
-                    props.push(AttributePatch::Remove(k.to_owned()));
-                }
-            }
+            let same_elements_patches: Vec<_> = new_element
+                .children
+                .to_owned()
+                .into_iter()
+                .flat_map(|child| {
+                    old_element
+                        .children
+                        .to_owned()
+                        .into_iter()
+                        .filter_map(move |old_child| match (&old_child, &child) {
+                            (
+                                VNode::Element(Element { key: old_key, .. }),
+                                VNode::Element(Element { key: new_key, .. }),
+                            ) => {
+                                if old_key.as_deref().is_some_and(|key| {
+                                    new_key.as_deref().is_some_and(|new_key| key == new_key)
+                                }) {
+                                    Some(ChildPatch::Update(patch(&old_child, &child)))
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .filter(|patch| patch != &ChildPatch::Update(Patch::None))
+                .collect();
 
-            for (i, (old_child, new_child)) in old_children.iter().zip(new_children.iter()).enumerate() {
-                if old_child != new_child {
-                    children.push(ChildPatch::Update(patch(old_child.clone(), new_child.clone())));
-                }
-            }
-
-            for i in old_children.len()..new_children.len() {
-                children.push(ChildPatch::Insert(new_children[i].clone()));
-            }
-
-            for i in new_children.len()..old_children.len() {
-                children.push(ChildPatch::Remove(old_children[i].clone()));
-            }
+            children.extend(same_elements_patches);
 
             Patch::Update { props, children }
         }
-
 
         _ => Patch::None,
     }

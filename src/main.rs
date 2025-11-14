@@ -2,17 +2,23 @@ mod dom;
 mod patch;
 
 use dom::{h, text};
+use patch::patch;
 
 fn main() {
-    let dom = text("Hello");
+    let dom = h(
+        "div",
+        Some("div-123"),
+        &[("style", "color: red;")],
+        vec![h("p", Some("p-456"), &[], vec![text("Hello")])],
+    );
     let new_dom = h(
         "div",
-        None,
+        Some("div-123"),
         &[("style", "color: red;")],
-        vec![h("p", None, &[], vec![text("Hello")])],
+        vec![h("p", Some("p-456"), &[], vec![text("Hello, world!")])],
     );
 
     println!("{:#?}", dom);
     println!("{:#?}", new_dom);
-    println!("Patch: {:#?}", patch::patch(dom, new_dom));
+    println!("Patch: {:#?}", patch(&dom, &new_dom));
 }
