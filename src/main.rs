@@ -1,9 +1,11 @@
 mod dom;
+mod patch;
 
 use dom::{h, text};
 
 fn main() {
-    let dom = h(
+    let dom = text("Hello");
+    let new_dom = h(
         "div",
         None,
         &[("style", "color: red;")],
@@ -11,4 +13,6 @@ fn main() {
     );
 
     println!("{:#?}", dom);
+    println!("{:#?}", new_dom);
+    println!("Patch: {:#?}", patch::patch(dom, new_dom));
 }
