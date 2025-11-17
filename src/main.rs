@@ -14,8 +14,11 @@ fn main() {
     let new_dom = h(
         "div",
         Some("div-123"),
-        &[("style", "color: red;")],
-        vec![h("p", Some("p-456"), &[], vec![text("Hello, world!")])],
+        &[("style", "color: blue;")],
+        vec![
+            h("p", Some("p-456"), &[], vec![text("Hello, world!")]),
+            h("span", Some("span-789"), &[], vec![text("New element")]),
+        ],
     );
 
     println!("{:#?}", dom);
