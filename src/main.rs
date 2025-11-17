@@ -1,8 +1,8 @@
 mod dom;
-mod patch;
+mod diff;
 
 use dom::{h, text};
-use patch::patch;
+use diff::diff;
 
 fn main() {
     let dom = h(
@@ -23,5 +23,5 @@ fn main() {
 
     println!("{:#?}", dom);
     println!("{:#?}", new_dom);
-    println!("Patch: {:#?}", patch(&dom, &new_dom));
+    println!("Patch: {:#?}", diff(&dom, &new_dom));
 }
