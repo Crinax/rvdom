@@ -1,23 +1,21 @@
-mod dom;
 mod diff;
+mod dom;
 
-use dom::{h, text};
 use diff::diff;
+use dom::{h, text};
 
 fn main() {
     let dom = h(
         "div",
-        Some("div-123"),
         &[("style", "color: red;")],
-        vec![h("p", Some("p-456"), &[], vec![text("Hello")])],
+        vec![h("p", &[], vec![text("Hello")])],
     );
     let new_dom = h(
         "div",
-        Some("div-123"),
         &[("style", "color: blue;")],
         vec![
-            h("p", Some("p-456"), &[], vec![text("Hello, world!")]),
-            h("span", Some("span-789"), &[], vec![text("New element")]),
+            h("p", &[], vec![text("Hello, world!")]),
+            h("span", &[], vec![text("New element")]),
         ],
     );
 

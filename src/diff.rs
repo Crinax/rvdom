@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::dom::{Element, VNode};
+use crate::dom::VNode;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AttributePatch {
@@ -11,10 +11,12 @@ pub enum AttributePatch {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChildPatch {
-    Insert(VNode),
+    Insert(Option<String>, VNode),
     Update(Patch),
     Remove(String),
 }
+
+// TODO: Implement patch by index for elements without keys
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Patch {
@@ -26,32 +28,17 @@ pub enum Patch {
     },
 }
 
-fn are_text_nodes_same(old: &[VNode], new: &[VNode]) -> bool {
-    let mut old_text_nodes_iter = old.iter().filter(|child| child.is_text());
-    let mut new_text_nodes_iter = new.iter().filter(|child| child.is_text());
-
-    let has_same_size = old_text_nodes_iter.clone().count() == new_text_nodes_iter.clone().count();
-
-    let all_old_text_nodes_are_in_new = old_text_nodes_iter.all(|child| new.contains(child));
-    let all_new_text_nodes_are_in_old = new_text_nodes_iter.all(|child| old.contains(child));
-
-    has_same_size && all_old_text_nodes_are_in_new && all_new_text_nodes_are_in_old
-}
-
-fn diff_props(
-    old_props: &HashMap<String, String>,
-    new_props: &HashMap<String, String>,
-) -> Vec<AttributePatch> {
+fn props_diff(old: &HashMap<String, String>, new: &HashMap<String, String>) -> Vec<AttributePatch> {
     let mut patches = Vec::new();
 
-    for name in old_props.keys() {
-        if !new_props.contains_key(name) {
+    for name in old.keys() {
+        if !new.contains_key(name) {
             patches.push(AttributePatch::Remove(name.to_owned()));
         }
     }
 
-    for (name, value) in new_props.to_owned().into_iter() {
-        match old_props.get(&name) {
+    for (name, value) in new.to_owned().into_iter() {
+        match old.get(&name) {
             Some(old_value) => {
                 if *old_value != value {
                     patches.push(AttributePatch::Update(name, value));
@@ -64,65 +51,49 @@ fn diff_props(
     patches
 }
 
-fn diff_children(old: &[VNode], new: &[VNode]) -> Vec<ChildPatch> {
+fn children_diff(old: &[VNode], new: &[VNode]) -> Vec<ChildPatch> {
     let mut patches = Vec::new();
+    let mut remove_patches = Vec::new();
+    let mut insert_patches = Vec::new();
+    let mut update_patches = Vec::new();
+    let mut old_key_index_map = HashMap::new();
+    let mut new_key_index_map: HashMap<&str, usize> = HashMap::new();
+    let new_index_key_map: HashMap<usize, &str> = new
+        .iter()
+        .enumerate()
+        .map(|(i, node)| (i, node.key()))
+        .collect();
 
-    for old_child in old {
-        match old_child {
-            VNode::Element(Element {
-                key: Some(old_key), ..
-            }) => {
-                if !new.iter().any(|new_child| match new_child {
-                    VNode::Element(Element {
-                        key: Some(new_key), ..
-                    }) => old_key == new_key,
-                    _ => false,
-                }) {
-                    patches.push(ChildPatch::Remove(old_key.to_owned()));
-                }
+    for (i, node) in old.iter().enumerate() {
+        old_key_index_map.insert(node.key(), i);
+    }
+
+    for (i, node) in new.iter().enumerate() {
+        new_key_index_map.insert(node.key(), i);
+
+        match old_key_index_map.get(node.key()) {
+            Some(old_index) => {
+                update_patches.push(ChildPatch::Update(diff(&old[*old_index], &node)));
             }
-            _ => {}
+            None => {
+                let key = *new_index_key_map.get(&i).unwrap();
+
+                insert_patches.push(ChildPatch::Insert(Some(key.to_owned()), node.to_owned()));
+            }
         }
     }
 
-    for new_child in new {
-        match new_child {
-            VNode::Element(Element {
-                key: Some(new_key), ..
-            }) => {
-                if !old.iter().any(|old_child| match old_child {
-                    VNode::Element(Element {
-                        key: Some(old_key), ..
-                    }) => old_key == new_key,
-                    _ => false,
-                }) {
-                    patches.push(ChildPatch::Insert(new_child.to_owned()));
-                }
-            }
-            _ => {}
+    for node in old {
+        let key = node.key();
+
+        if !new_key_index_map.contains_key(key) {
+            remove_patches.push(ChildPatch::Remove(key.to_owned()));
         }
     }
 
-    for old_child in old {
-        match old_child {
-            VNode::Element(Element {
-                key: Some(old_key), ..
-            }) => {
-                if let Some(new_child) = new.iter().find(|new_child| match new_child {
-                    VNode::Element(Element {
-                        key: Some(new_key), ..
-                    }) => old_key == new_key,
-                    _ => false,
-                }) {
-                    let new_patch = diff(old_child, new_child);
-                    if new_patch != Patch::None {
-                        patches.push(ChildPatch::Update(new_patch));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    patches.extend(remove_patches);
+    patches.extend(insert_patches);
+    patches.extend(update_patches);
 
     patches
 }
@@ -133,39 +104,25 @@ pub fn diff(old: &VNode, new: &VNode) -> Patch {
     }
 
     match (old, new) {
-        (VNode::Text(_), node) => Patch::Replace(node.to_owned()),
-        (_, VNode::Text(text)) => Patch::Replace(VNode::Text(text.to_owned())),
+        (VNode::Text(_, _), el) => Patch::Replace(el.to_owned()),
+        (_, VNode::Text(text, key)) => Patch::Replace(VNode::Text(text.to_owned(), key.to_owned())),
 
-        (old_element, new_element) => {
-            if old_element.element().tag_name != new_element.element().tag_name {
-                return Patch::Replace(new_element.to_owned());
+        (old, new) => {
+            if old.key() != new.key() {
+                Patch::Replace(new.to_owned())
+            } else {
+                let old = old.element();
+                let new = new.element();
+
+                let props: Vec<AttributePatch> = props_diff(&old.props, &new.props);
+                let children: Vec<ChildPatch> = children_diff(&old.children, &new.children);
+
+                if props.is_empty() && children.is_empty() {
+                    Patch::None
+                } else {
+                    Patch::Update { props, children }
+                }
             }
-
-            if old_element.element().key.to_owned().is_some_and(|key| {
-                new_element
-                    .element()
-                    .key
-                    .to_owned()
-                    .is_some_and(|new_key| key != new_key)
-            }) {
-                return Patch::Replace(new_element.to_owned());
-            }
-
-            let old_element = old_element.element();
-            let new_element = new_element.element();
-
-            let mut props = Vec::new();
-            let mut children = Vec::new();
-
-            if !are_text_nodes_same(&old_element.children, &new_element.children) {
-                return Patch::Replace(VNode::Element(new_element.to_owned()));
-            }
-
-            props.extend(diff_props(&old_element.props, &new_element.props));
-
-            children.extend(diff_children(&old_element.children, &new_element.children));
-
-            Patch::Update { props, children }
         }
     }
 }
@@ -194,32 +151,32 @@ mod tests {
 
     #[test]
     fn test_diff_with_same_element_nodes() {
-        let old = h("div", None, &[], vec![]);
-        let new = h("div", None, &[], vec![]);
+        let old = h("div", &[], vec![]);
+        let new = h("div", &[], vec![]);
 
         assert_eq!(diff(&old, &new), Patch::None);
     }
 
     #[test]
     fn test_diff_with_different_element_nodes() {
-        let old = h("div", None, &[], vec![]);
-        let new = h("span", None, &[], vec![]);
+        let old = h("div", &[], vec![]);
+        let new = h("span", &[], vec![]);
 
         assert_eq!(diff(&old, &new), Patch::Replace(new.clone()));
     }
 
     #[test]
     fn test_diff_with_same_element_nodes_with_same_props() {
-        let old = h("div", None, &[("style", "color: red;")], vec![]);
-        let new = h("div", None, &[("style", "color: red;")], vec![]);
+        let old = h("div", &[("style", "color: red;")], vec![]);
+        let new = h("div", &[("style", "color: red;")], vec![]);
 
         assert_eq!(diff(&old, &new), Patch::None);
     }
 
     #[test]
     fn test_diff_with_same_element_nodes_with_different_props() {
-        let old = h("div", None, &[("style", "color: red;")], vec![]);
-        let new = h("div", None, &[("style", "color: blue;")], vec![]);
+        let old = h("div", &[("style", "color: red;")], vec![]);
+        let new = h("div", &[("style", "color: blue;")], vec![]);
 
         assert_eq!(
             diff(&old, &new),
@@ -235,34 +192,24 @@ mod tests {
 
     #[test]
     fn test_diff_with_same_element_nodes_with_different_text_children() {
-        let old = h("div", None, &[], vec![text("Hello!")]);
-        let new = h("div", None, &[], vec![text("Hello, world!")]);
+        let old = h("div", &[], vec![text("Hello!")]);
+        let new = h("div", &[], vec![text("Hello, world!")]);
 
         assert_eq!(diff(&old, &new), Patch::Replace(new.clone()));
     }
 
     #[test]
     fn test_diff_with_same_element_nodes_with_same_text_children() {
-        let old = h("div", None, &[], vec![text("Hello!")]);
-        let new = h("div", None, &[], vec![text("Hello!")]);
+        let old = h("div", &[], vec![text("Hello!")]);
+        let new = h("div", &[], vec![text("Hello!")]);
 
         assert_eq!(diff(&old, &new), Patch::None);
     }
 
     #[test]
     fn test_diff_with_same_element_nodes_with_different_children() {
-        let old = h(
-            "div",
-            Some("div-123"),
-            &[],
-            vec![h("p", Some("p-456"), &[], vec![])],
-        );
-        let new = h(
-            "div",
-            Some("div-123"),
-            &[],
-            vec![h("span", Some("span-789"), &[], vec![])],
-        );
+        let old = h("div", &[], vec![h("p", &[], vec![])]);
+        let new = h("div", &[], vec![h("span", &[], vec![])]);
 
         assert_eq!(
             diff(&old, &new),
@@ -270,7 +217,7 @@ mod tests {
                 props: vec![],
                 children: vec![
                     ChildPatch::Remove("p-456".to_owned()),
-                    ChildPatch::Insert(h("span", Some("span-789"), &[], vec![]))
+                    ChildPatch::Insert(None, h("span", &[], vec![]))
                 ]
             }
         );
@@ -280,25 +227,13 @@ mod tests {
     fn test_diff_with_same_element_nodes_with_same_children_with_different_props() {
         let old = h(
             "div",
-            Some("div-123"),
             &[],
-            vec![h(
-                "span",
-                Some("span-789"),
-                &[("style", "color: blue;")],
-                vec![],
-            )],
+            vec![h("span", &[("style", "color: blue;")], vec![])],
         );
         let new = h(
             "div",
-            Some("div-123"),
             &[],
-            vec![h(
-                "span",
-                Some("span-789"),
-                &[("style", "color: red;")],
-                vec![],
-            )],
+            vec![h("span", &[("style", "color: red;")], vec![])],
         );
 
         assert_eq!(
@@ -318,8 +253,8 @@ mod tests {
 
     #[test]
     fn test_same_nodes_with_different_keys() {
-        let old = h("div", Some("div-123"), &[], vec![]);
-        let new = h("div", Some("div-456"), &[], vec![]);
+        let old = h("div", &[], vec![]);
+        let new = h("div", &[], vec![]);
 
         assert_eq!(diff(&old, &new), Patch::Replace(new.clone()));
     }
